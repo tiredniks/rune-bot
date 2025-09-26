@@ -1,5 +1,6 @@
 import os
 import random
+import os
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
@@ -11,8 +12,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Токен бота
-BOT_TOKEN = "7646237503:AAFF7hsMPqr4_66I6RNSu3IVm8sz2KC0S20"
+# Токен бота (берется из переменных окружения)
+BOT_TOKEN = os.environ.get('BOT_TOKEN', '7646237503:AAFF7hsMPqr4_66I6RNSu3IVm8sz2KC0S20')
 
 class RuneBot:
     def __init__(self):
@@ -604,4 +605,5 @@ def main():
         print(f"❌ Ошибка запуска: {e}")
 
 if __name__ == '__main__':
+
     main()
