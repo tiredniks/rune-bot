@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: rune-bot
+    env: python
+    plan: free
+    buildCommand: ""
+    startCommand: python bot_fixed.py
+    envVars:
+      - key: BOT_TOKEN
+        value: 7646237503:AAFF7hsMPqr4_66I6RNSu3IVm8sz2KC0S20
