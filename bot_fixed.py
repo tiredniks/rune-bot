@@ -411,22 +411,31 @@ async def show_main_menu(update, context, first_name):
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик нажатий на кнопки"""
-    query = update.callback_query
-    await query.answer()
+    try:
+        query = update.callback_query
+        await query.answer()
+        
+        data = query.data
+        
+        logger.info(f"🔘 Нажата кнопка: {data} пользователем {query.from_user.id}")
+        
+        if data == "draw_rune":
+            await draw_rune(query, context)
+        elif data == "how_to_ask":
+            await how_to_ask(query, context)
+        elif data == "about":
+            await show_about(query, context)
+        elif data == "back_to_menu":
+            await show_main_menu(query, context, query.from_user.first_name)
     
-    data = query.data
-    
-    logger.info(f"🔘 Нажата кнопка: {data} пользователем {query.from_user.id}")
-    
-    if data == "draw_rune":
-        await draw_rune(query, context)
-    elif data == "how_to_ask":
-        await how_to_ask(query, context)
-    elif data == "about":
-        await show_about(query, context)
-    elif data == "back_to_menu":
-        await show_main_menu(query, context, query.from_user.first_name)
-
+    except Exception as e:
+        logger.error(f"❌ Ошибка в button_handler: {e}")
+        # Пытаемся отправить сообщение об ошибке
+        try:
+            await query.edit_message_text("❌ Произошла ошибка. Попробуйте еще раз.")
+        except:
+            pass
+            
 async def draw_rune(query, context):
     """Вытягивание случайной руны"""
     try:
@@ -605,5 +614,6 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
