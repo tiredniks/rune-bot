@@ -1,4 +1,5 @@
-from flask import Flask
+import http.server
+import socketserver
 import threading
 import os
 import random
@@ -6,20 +7,22 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-# Создаем простой HTTP сервер для порта
-app = Flask(__name__)
+# Простой HTTP сервер для порта
+class SimpleHandler(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+        self.wfile.write(b'Rune Bot is running!')
 
-@app.route('/')
-def home():
-    return "Rune Bot is running!"
+def run_http_server():
+    with socketserver.TCPServer(("", 8080), SimpleHandler) as httpd:
+        httpd.serve_forever()
 
-def run_flask():
-    app.run(host='0.0.0.0', port=8080)
-
-# Запускаем Flask в фоне
-flask_thread = threading.Thread(target=run_flask)
-flask_thread.daemon = True
-flask_thread.start()
+# Запускаем HTTP сервер в фоне
+http_thread = threading.Thread(target=run_http_server)
+http_thread.daemon = True
+http_thread.start()
 
 print("✅ HTTP сервер запущен на порту 8080")
 
@@ -633,6 +636,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
