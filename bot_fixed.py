@@ -1,9 +1,29 @@
 import os
 import random
 import logging
-from flask import Flask, request
+import http.server
+import socketserver
+import threading
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+
+# Простой HTTP сервер для порта
+class SimpleHandler(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+        self.wfile.write(b'Rune Bot is running!')
+
+def run_http_server():
+    with socketserver.TCPServer(("", 8080), SimpleHandler) as httpd:
+        print("✅ HTTP сервер запущен на порту 8080")
+        httpd.serve_forever()
+
+# Запускаем HTTP сервер в фоне
+http_thread = threading.Thread(target=run_http_server)
+http_thread.daemon = True
+http_thread.start()
 
 # Настройка логирования
 logging.basicConfig(
@@ -14,12 +34,6 @@ logger = logging.getLogger(__name__)
 
 # Токен бота из переменных окружения
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '7646237503:AAFF7hsMPqr4_66I6RNSu3IVm8sz2KC0S20')
-
-# Создаем Flask приложение
-app = Flask(__name__)
-
-# Глобальная переменная для приложения
-application = None
 
 class RuneBot:
     def __init__(self):
@@ -384,9 +398,7 @@ bot = RuneBot()
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start"""
     user = update.effective_user
-    
     logger.info(f"👤 Пользователь запустил бота: {user.id} (@{user.username})")
-    
     await show_main_menu(update, context, user.first_name)
 
 async def show_main_menu(update, context, first_name):
@@ -423,7 +435,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer()
         
         data = query.data
-        
         logger.info(f"🔘 Нажата кнопка: {data} пользователем {query.from_user.id}")
         
         if data == "draw_rune":
@@ -446,20 +457,14 @@ async def draw_rune(query, context):
     """Вытягивание случайной руны"""
     try:
         rune = bot.get_random_rune()
-        
         logger.info(f"Выбрана руна: {rune['name']}")
         
-        # Сначала редактируем сообщение с меню
-        await query.edit_message_text(
-            "🔄 *Вытягиваю руну...*",
-            parse_mode='Markdown'
-        )
+        await query.edit_message_text("🔄 *Вытягиваю руну...*", parse_mode='Markdown')
         
-        # Добавляем небольшую задержку для стабильности
         import asyncio
         await asyncio.sleep(1)
         
-        # Пробуем отправить текст сначала, без изображения
+        # Отправляем текст руны
         await query.message.reply_text(
             f"🛡️ *Вам выпала руна:* {rune['name']} - {rune['title']}*\n\n"
             f"📖 *Значение:*\n{rune['meaning']}\n\n"
@@ -467,7 +472,7 @@ async def draw_rune(query, context):
             parse_mode='Markdown'
         )
         
-        # Затем пробуем отправить изображение отдельно
+        # Пробуем отправить изображение
         try:
             await query.message.reply_photo(
                 photo=rune["image"],
@@ -475,16 +480,11 @@ async def draw_rune(query, context):
             )
         except Exception as photo_error:
             logger.error(f"Ошибка при отправке фото: {photo_error}")
-            await query.message.reply_text(
-                "📷 *Изображение руны временно недоступно*\n"
-                "Но мудрость руны все равно с вами!",
-                parse_mode='Markdown'
-            )
+            await query.message.reply_text("📷 *Изображение временно недоступно*", parse_mode='Markdown')
         
         # Отправляем меню
         await query.message.reply_text(
-            "✨ *Руна выбрана!*\n\n"
-            "Задумайтесь о своем вопросе и позвольте мудрости руны направлять вас.",
+            "✨ *Руна выбрана!*\nЗадумайтесь о своем вопросе и позвольте мудрости руны направлять вас.",
             parse_mode='Markdown',
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🎴 Вытянуть еще одну руну", callback_data="draw_rune")],
@@ -494,10 +494,9 @@ async def draw_rune(query, context):
         )
         
     except Exception as e:
-        logger.error(f"Ошибка при вытягивании руны: {e}", exc_info=True)
+        logger.error(f"Ошибка при вытягивании руны: {e}")
         await query.edit_message_text(
-            "❌ *Произошла ошибка при вытягивании руны*\n\n"
-            "Попробуйте еще раз через несколько секунд.",
+            "❌ *Произошла ошибка*\nПопробуйте еще раз через несколько секунд.",
             parse_mode='Markdown',
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔄 Попробовать снова", callback_data="draw_rune")],
@@ -509,26 +508,11 @@ async def how_to_ask(query, context):
     """Информация о том, как правильно задавать вопросы"""
     advice_text = (
         "📖 *Как правильно задавать вопрос рунам:*\n\n"
-        
-        "1. **Сосредоточьтесь**\n"
-        "   Перед вытягиванием руны найдите тихое место, где вас никто не побеспокоит. Сделайте несколько глубоких вдохов и выдохов.\n\n"
-        
-        "2. **Сформулируйте вопрос**\n"
-        "   Будьте конкретны, но оставляйте пространство для интерпретации. Примеры хороших вопросов:\n"
-        "   • «Что мне важно знать о текущей ситуации?»\n"
-        "   • «Какой путь будет наилучшим для моего развития?»\n"
-        "   • «На что мне обратить внимание в ближайшее время?»\n\n"
-        
-        "3. **Доверьтесь интуиции**\n"
-        "   Не пытайтесь анализировать руну логически. Позвольте первому впечатлению и чувствам говорить с вами.\n\n"
-        
-        "4. **Будьте открыты**\n"
-        "   Руны могут дать ответ, который вы не ожидаете. Будьте готовы принять любую мудрость.\n\n"
-        
-        "5. **Имейте ввиду**\n"
-        "   Руны Русичей - это язык общения с Высшими силами, Родными Богами и Предками. Это язык Света и Образов. Не стоит сводить это к гаданию.\n\n"
-        
-        "✨ *Помните:* руны — это проводник, а не предсказание судьбы. Они показывают потенциал и направление."
+        "1. **Сосредоточьтесь** - найдите тихое место\n"
+        "2. **Сформулируйте вопрос** - будьте конкретны\n" 
+        "3. **Доверьтесь интуиции** - не анализируйте логически\n"
+        "4. **Будьте открыты** - примите любую мудрость\n\n"
+        "✨ *Помните:* руны — это проводник, а не предсказание судьбы."
     )
     
     await query.edit_message_text(
@@ -544,21 +528,8 @@ async def show_about(query, context):
     """Информация о боте"""
     about_text = (
         "📚 *Бот рун - бесплатный проводник в мир мудрости*\n\n"
-        
-        "✨ *О рунах:*\n"
-        "Руны — это древние символы, несущие в себе мудрость поколений. "
-        "Каждая руна имеет свое уникальное значение и энергетику, помогая нам "
-        "получить ответы на важные вопросы и найти правильный путь.\n\n"
-        
-        "🆓 *Бесплатный доступ:*\n"
-        "Этот бот создан для того, чтобы каждый мог получить мудрый совет Вселенной. "
-        "Никаких оплат, подписок или ограничений — только чистая энергия и мудрость рун.\n\n"
-        
-        "🌌 *Как работает бот:*\n"
-        "1. Вы задаете вопрос (мысленно или вслух)\n"
-        "2. Вытягиваете случайную руну\n"
-        "3. Получаете мудрый ответ и, возможно, совет\n\n"
-        
+        "✨ *О рунах:*\nДревние символы, несущие мудрость поколений.\n\n"
+        "🆓 *Бесплатный доступ:*\nНикаких оплат или ограничений.\n\n" 
         "💫 *Доверяйте процессу и позвольте магии рун направлять вас!*"
     )
     
@@ -576,17 +547,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработка текстовых сообщений"""
     user_id = update.effective_user.id
     text = update.message.text.strip()
-    
     logger.info(f"💬 Сообщение от {user_id}: {text}")
     
-    # Обработка команды /start
     if text == '/start':
         return
     
-    # Ответ на обычные сообщения
     await update.message.reply_text(
-        "✨ Используйте кнопки меню для навигации.\n\n"
-        "Если меню пропало, отправьте /start",
+        "✨ Используйте кнопки меню для навигации.\nЕсли меню пропало, отправьте /start",
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🔄 Открыть меню", callback_data="back_to_menu")]
         ])
@@ -596,95 +563,30 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик ошибок"""
     logger.error(f"Ошибка: {context.error}")
 
-async def setup_bot():
-    """Настройка бота"""
-    global application
-    
-    application = Application.builder().token(BOT_TOKEN).build()
-    
-    # Добавляем обработчики
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(button_handler))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.add_error_handler(error_handler)
-    
-    print("✅ Бот инициализирован!")
-
-# Flask маршруты
-@app.route('/')
-def home():
-    return "🛡️ Бот рун работает! ✅"
-
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    """Обработка webhook от Telegram"""
-    try:
-        # Создаем событие обновления
-        update = Update.de_json(request.get_json(), application.bot)
-        
-        # Обрабатываем обновление
-        application.update_queue.put(update)
-        
-        return 'ok'
-    except Exception as e:
-        logger.error(f"Ошибка в webhook: {e}")
-        return 'error', 500
-
-@app.route('/set_webhook', methods=['GET'])
-def set_webhook():
-    """Установка webhook (вызывается один раз)"""
-    try:
-        # Получаем URL сервиса из переменных окружения Render
-        service_name = os.environ.get('RENDER_SERVICE_NAME', 'your-service-name')
-        webhook_url = f"https://{service_name}.onrender.com/webhook"
-        
-        # Устанавливаем webhook
-        import asyncio
-        async def set_wh():
-            await application.bot.set_webhook(webhook_url)
-            return await application.bot.get_webhook_info()
-        
-        result = asyncio.run(set_wh())
-        
-        return f"Webhook установлен! {result}"
-    except Exception as e:
-        return f"Ошибка установки webhook: {e}"
-
-def run_bot():
+def main():
     """Запуск бота"""
-    import asyncio
-    
-    # Настраиваем бота
-    asyncio.run(setup_bot())
-    
-    # Запускаем polling в фоне
-    async def start_polling():
-        await application.initialize()
-        await application.start()
-        await application.updater.start_polling()
-        print("🛡️ Бот рун запущен через polling!")
+    try:
+        application = Application.builder().token(BOT_TOKEN).build()
+        
+        # Добавляем обработчики
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CallbackQueryHandler(button_handler))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        application.add_error_handler(error_handler)
+        
+        print("🛡️ Бот рун запущен!")
         print("✨ Теперь открыт для всех пользователей бесплатно!")
         print("🌐 Ожидаю сообщения...")
-    
-    # Запускаем в отдельном потоке
-    import threading
-    def start_async():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(start_polling())
-        loop.run_forever()
-    
-    bot_thread = threading.Thread(target=start_async)
-    bot_thread.daemon = True
-    bot_thread.start()
+        
+        application.run_polling()
+        
+    except Exception as e:
+        logger.error(f"Критическая ошибка при запуске: {e}")
+        print(f"❌ Ошибка запуска: {e}")
 
 if __name__ == '__main__':
-    # Запускаем бота
-    run_bot()
-    
-    # Запускаем Flask сервер
-    port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    main()
+
 
 
 
