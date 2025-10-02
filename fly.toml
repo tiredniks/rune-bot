@@ -1,0 +1,18 @@
+app = "rune-bot"  # название вашего приложения
+
+[build]
+  builder = "paketobuildpacks/builder:base"
+
+[env]
+  BOT_TOKEN = "7646237503:AAFF7hsMPqr4_66I6RNSu3IVm8sz2KC0S20"
+
+[[services]]
+  internal_port = 8080
+  protocol = "tcp"
+  
+  [services.concurrency]
+    hard_limit = 25
+    soft_limit = 20
+  
+  [[services.ports]]
+    port = 8080
