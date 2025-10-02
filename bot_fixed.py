@@ -1,8 +1,27 @@
+from flask import Flask
+import threading
 import os
 import random
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+
+# Создаем простой HTTP сервер для порта
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Rune Bot is running!"
+
+def run_flask():
+    app.run(host='0.0.0.0', port=8080)
+
+# Запускаем Flask в фоне
+flask_thread = threading.Thread(target=run_flask)
+flask_thread.daemon = True
+flask_thread.start()
+
+print("✅ HTTP сервер запущен на порту 8080")
 
 # Настройка логирования
 logging.basicConfig(
@@ -614,6 +633,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
