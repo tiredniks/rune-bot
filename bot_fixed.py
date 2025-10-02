@@ -1,30 +1,9 @@
-import http.server
-import socketserver
-import threading
 import os
 import random
 import logging
+from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
-
-# Простой HTTP сервер для порта
-class SimpleHandler(http.server.SimpleHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header('Content-type', 'text/plain')
-        self.end_headers()
-        self.wfile.write(b'Rune Bot is running!')
-
-def run_http_server():
-    with socketserver.TCPServer(("", 8080), SimpleHandler) as httpd:
-        httpd.serve_forever()
-
-# Запускаем HTTP сервер в фоне
-http_thread = threading.Thread(target=run_http_server)
-http_thread.daemon = True
-http_thread.start()
-
-print("✅ HTTP сервер запущен на порту 8080")
 
 # Настройка логирования
 logging.basicConfig(
@@ -35,6 +14,12 @@ logger = logging.getLogger(__name__)
 
 # Токен бота из переменных окружения
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '7646237503:AAFF7hsMPqr4_66I6RNSu3IVm8sz2KC0S20')
+
+# Создаем Flask приложение
+app = Flask(__name__)
+
+# Глобальная переменная для приложения
+application = None
 
 class RuneBot:
     def __init__(self):
@@ -452,19 +437,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     except Exception as e:
         logger.error(f"❌ Ошибка в button_handler: {e}")
-        # Пытаемся отправить сообщение об ошибке
         try:
             await query.edit_message_text("❌ Произошла ошибка. Попробуйте еще раз.")
         except:
             pass
-            
+
 async def draw_rune(query, context):
     """Вытягивание случайной руны"""
     try:
         rune = bot.get_random_rune()
         
         logger.info(f"Выбрана руна: {rune['name']}")
-        logger.info(f"URL изображения: {rune['image']}")
         
         # Сначала редактируем сообщение с меню
         await query.edit_message_text(
@@ -543,7 +526,7 @@ async def how_to_ask(query, context):
         "   Руны могут дать ответ, который вы не ожидаете. Будьте готовы принять любую мудрость.\n\n"
         
         "5. **Имейте ввиду**\n"
-        "   Руны Русичей - это язык общения с Высшими силами, Родными Богами и Предками. Это язык Света и Образов. Не стоит сводить это к гаданию, к заглядыванию в будущее.\n\n"
+        "   Руны Русичей - это язык общения с Высшими силами, Родными Богами и Предками. Это язык Света и Образов. Не стоит сводить это к гаданию.\n\n"
         
         "✨ *Помните:* руны — это проводник, а не предсказание судьбы. Они показывают потенциал и направление."
     )
@@ -613,29 +596,96 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик ошибок"""
     logger.error(f"Ошибка: {context.error}")
 
-def main():
-    """Запуск бота"""
+async def setup_bot():
+    """Настройка бота"""
+    global application
+    
+    application = Application.builder().token(BOT_TOKEN).build()
+    
+    # Добавляем обработчики
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CallbackQueryHandler(button_handler))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_error_handler(error_handler)
+    
+    print("✅ Бот инициализирован!")
+
+# Flask маршруты
+@app.route('/')
+def home():
+    return "🛡️ Бот рун работает! ✅"
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    """Обработка webhook от Telegram"""
     try:
-        application = Application.builder().token(BOT_TOKEN).build()
+        # Создаем событие обновления
+        update = Update.de_json(request.get_json(), application.bot)
         
-        # Добавляем обработчики
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(CallbackQueryHandler(button_handler))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-        application.add_error_handler(error_handler)
+        # Обрабатываем обновление
+        application.update_queue.put(update)
         
-        print("🛡️ Бот рун запущен!")
+        return 'ok'
+    except Exception as e:
+        logger.error(f"Ошибка в webhook: {e}")
+        return 'error', 500
+
+@app.route('/set_webhook', methods=['GET'])
+def set_webhook():
+    """Установка webhook (вызывается один раз)"""
+    try:
+        # Получаем URL сервиса из переменных окружения Render
+        service_name = os.environ.get('RENDER_SERVICE_NAME', 'your-service-name')
+        webhook_url = f"https://{service_name}.onrender.com/webhook"
+        
+        # Устанавливаем webhook
+        import asyncio
+        async def set_wh():
+            await application.bot.set_webhook(webhook_url)
+            return await application.bot.get_webhook_info()
+        
+        result = asyncio.run(set_wh())
+        
+        return f"Webhook установлен! {result}"
+    except Exception as e:
+        return f"Ошибка установки webhook: {e}"
+
+def run_bot():
+    """Запуск бота"""
+    import asyncio
+    
+    # Настраиваем бота
+    asyncio.run(setup_bot())
+    
+    # Запускаем polling в фоне
+    async def start_polling():
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling()
+        print("🛡️ Бот рун запущен через polling!")
         print("✨ Теперь открыт для всех пользователей бесплатно!")
         print("🌐 Ожидаю сообщения...")
-        
-        application.run_polling()
-        
-    except Exception as e:
-        logger.error(f"Критическая ошибка при запуске: {e}")
-        print(f"❌ Ошибка запуска: {e}")
+    
+    # Запускаем в отдельном потоке
+    import threading
+    def start_async():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(start_polling())
+        loop.run_forever()
+    
+    bot_thread = threading.Thread(target=start_async)
+    bot_thread.daemon = True
+    bot_thread.start()
 
 if __name__ == '__main__':
-    main()
+    # Запускаем бота
+    run_bot()
+    
+    # Запускаем Flask сервер
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port, debug=False)
+
 
 
 
